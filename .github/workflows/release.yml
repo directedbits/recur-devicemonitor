@@ -1,0 +1,100 @@
+name: Release
+
+# Tag a version (e.g. `git tag v0.1.0 && git push --tags`) to build the plugin
+# for every platform and publish a GitHub Release. Each asset is a single-plugin
+# archive that `recur plugin install <url>` can consume directly.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.25"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: linux, goarch: arm, goarm: "7" }
+          - { goos: linux, goarch: "386" }
+          - { goos: windows, goarch: amd64, ext: ".exe" }
+          - { goos: windows, goarch: arm64, ext: ".exe" }
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Compute names
+        id: vars
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          # The plugin's on-disk name is the manifest `name` field; the built
+          # binary must match it (recur resolves <dir>/<name>).
+          PLUGIN="$(grep -E '^name:' manifest.yaml | head -1 | sed -E 's/^name:[[:space:]]*//; s/^"//; s/"$//')"
+          SUFFIX="${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ -n "${{ matrix.goarm }}" ]; then SUFFIX="${SUFFIX}v${{ matrix.goarm }}"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "plugin=$PLUGIN" >> "$GITHUB_OUTPUT"
+          echo "artifact=${PLUGIN}-${TAG}-${SUFFIX}" >> "$GITHUB_OUTPUT"
+
+      - name: Build plugin
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: "0"
+        run: |
+          PLUGIN="${{ steps.vars.outputs.plugin }}"
+          # Archive layout: a single <plugin>/ dir holding the binary (named
+          # exactly <plugin>) and manifest.yaml. recur's findPluginDir locates
+          # the manifest one level deep and runs <dir>/<plugin>.
+          OUTDIR="dist/${PLUGIN}"
+          mkdir -p "$OUTDIR"
+          go build -o "$OUTDIR/${PLUGIN}${{ matrix.ext }}" .
+          cp manifest.yaml "$OUTDIR/"
+
+      - name: Package archive
+        run: |
+          cd dist
+          tar czf "${{ steps.vars.outputs.artifact }}.tar.gz" "${{ steps.vars.outputs.plugin }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.vars.outputs.artifact }}
+          path: dist/${{ steps.vars.outputs.artifact }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          cd artifacts
+          sha256sum *.tar.gz > "checksums-${TAG}.txt"
+          cat "checksums-${TAG}.txt"
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            artifacts/*.tar.gz
+            artifacts/checksums-*.txt
+          generate_release_notes: true

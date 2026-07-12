@@ -1,0 +1,15 @@
+/dist/
+/bin/
+
+# Built plugin binary (named after the manifest `name`), produced by `go build`
+# in this directory. Add your plugin's binary name explicitly if you prefer.
+/recur-devicemonitor
+/devicemonitor
+*.exe
+
+# Coverage
+coverage*.out
+
+# OS / editor
+.DS_Store
+*.swp

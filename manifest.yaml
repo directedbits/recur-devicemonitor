@@ -1,0 +1,76 @@
+name: devicemonitor
+namespace: core.devicemonitor
+version: "0.2.0"
+description: "Device connect/disconnect triggers via UDisks2 (Linux) or WMI (Windows)"
+dependencies:
+  - udisks2  # Linux only; Windows uses WMI (no external dependencies)
+
+triggers:
+  - name: DeviceConnected
+    description: "Fires when a block/USB device is connected"
+    defaults:
+      # UDisks2 emits a burst of InterfacesAdded signals per insert (drive +
+      # whole-disk block + each partition). The framework's default 300ms
+      # debounce collapses the burst into a single trailing event, which
+      # masks per-partition visibility. Opt out so every event is delivered;
+      # users can re-enable debouncing per-recurfile if they want a single
+      # summary event.
+      debounce: "0"
+    options:
+      - name: device_type
+        type: string
+        default: "all"
+        description: "Kind-of-object filter: drive, block, or all. (Use device_bus to filter by connection medium like usb/loop/sata.)"
+      - name: device_bus
+        type: string
+        default: "all"
+        description: "Connection bus filter: usb, loop, sata, ata, nvme, ..., or 'all'. Events with no detectable bus only match 'all'."
+    context:
+      - name: DeviceName
+        type: string
+        description: "Device name (e.g., sdb1 on Linux, volume name on Windows)"
+      - name: DeviceType
+        type: string
+        description: "Kind of UDisks2 object: drive or block"
+      - name: DeviceBus
+        type: string
+        description: "Connection bus (usb, loop, sata, ata, nvme, ...) or empty when unknown"
+      - name: DevicePath
+        type: string
+        description: "Device path (D-Bus object path on Linux, drive letter on Windows)"
+      - name: DrivePath
+        type: string
+        description: "Parent drive D-Bus object path for block events; empty for drive events and devices without a parent drive (e.g. loop)"
+      - name: MountPoint
+        type: string
+        description: "Mount point if mounted, empty otherwise"
+
+  - name: DeviceDisconnected
+    description: "Fires when a block/USB device is disconnected"
+    defaults:
+      debounce: "0"
+    options:
+      - name: device_type
+        type: string
+        default: "all"
+        description: "Kind-of-object filter: drive, block, or all"
+      - name: device_bus
+        type: string
+        default: "all"
+        description: "Connection bus filter: usb, loop, sata, ata, nvme, ..., or 'all'"
+    context:
+      - name: DeviceName
+        type: string
+        description: "Device name"
+      - name: DeviceType
+        type: string
+        description: "Kind of UDisks2 object: drive or block"
+      - name: DeviceBus
+        type: string
+        description: "Connection bus inherited from the matching add event"
+      - name: DevicePath
+        type: string
+        description: "Device path"
+      - name: DrivePath
+        type: string
+        description: "Parent drive D-Bus object path for block events; empty for drive events"
